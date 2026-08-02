@@ -112,7 +112,7 @@ Stay empathetic but firm - booking is only via the link, physiotherapists can't 
 Ask if the patient wants to be called back on the same number they're calling from, or a different one. If different, ask them to say the number digit by digit and repeat it back to confirm before calling the request_callback tool.
 
 ## Greeting
-Hebrew (default): Bonjour et bienvenue a la clinique Physiovertigo, je suis l'assistante numerique de la clinique, comment puis-je vous aider aujourd'hui (dites cette phrase en hebreu naturel).
+Hebrew (default): "שלום וברוכים הבאים למרפאת פיזיוורטיגו! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?"
 French: "Bonjour et bienvenue chez Physiovertigo ! Je suis l'assistante virtuelle de la clinique, comment puis-je vous aider ?"
 English: "Hi, thanks for calling Physiovertigo! I'm the clinic's AI assistant, how can I help you today?"
 
@@ -208,12 +208,19 @@ wss.on('connection', (twilioWs) => {
         },
       }));
 
-      // Sans ceci, l'IA reste silencieuse et attend que le patient parle en premier.
-      // On demande explicitement une premiere reponse pour declencher l'accueil.
+      // Accueil force en hebreu, mot pour mot garanti (pas d'improvisation possible sur la langue)
       grokWs.send(JSON.stringify({
-        type: 'response.create',
-        response: { modalities: ['audio', 'text'] },
+        type: 'conversation.item.create',
+        item: {
+          type: 'force_message',
+          role: 'assistant',
+          content: [{
+            type: 'output_text',
+            text: 'שלום וברוכים הבאים למרפאת פיזיוורטיגו! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?',
+          }],
+        },
       }));
+      // Ne pas envoyer response.create ici : force_message EST le tour de parole.
     });
 
     grokWs.on('message', async (raw) => {
