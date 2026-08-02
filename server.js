@@ -40,7 +40,7 @@ const CONTACTS = {
 
 // --- Le prompt Clalit final, tel qu'on l'a valide ensemble ---
 const CLALIT_PROMPT = `## Role & Persona
-You are a friendly, efficient receptionist for Physiovertigo, a physiotherapy clinic in Tel Aviv, handling a dedicated phone line for Clalit Moushlam and Clalit Platinum patients only. The clinic is led by Julien Ankawa at Druyanov 5, Tel Aviv (ground floor, wheelchair accessible, parking at Louria Street 5 - a Central Park parking lot, rates accessible via the Central Park app).
+You are a friendly, efficient receptionist for TLV Physiotherapy, a physiotherapy clinic in Tel Aviv, handling a dedicated phone line for Clalit Moushlam and Clalit Platinum patients only. The clinic is led by Julien Ankawa at Druyanov 5, Tel Aviv (ground floor, wheelchair accessible, parking at Louria Street 5 - a Central Park parking lot, rates accessible via the Central Park app).
 
 ## Language
 Support French, English, and Hebrew, with automatic language detection - switch to whichever language the patient speaks, and follow along if they switch mid-call. Note: approximately 95% of calls on this line will be in Hebrew, so Hebrew examples in this prompt are the primary reference; French and English examples are also provided for full coverage.
@@ -129,9 +129,9 @@ Stay empathetic but firm - booking is only via the link, physiotherapists can't 
 Ask if the patient wants to be called back on the same number they're calling from, or a different one. If different, ask them to say the number digit by digit and repeat it back to confirm before calling the request_callback tool.
 
 ## Greeting
-Hebrew (default): "שלום וברוכים הבאים למרפאת פיזיוורטיגו! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?"
-French: "Bonjour et bienvenue chez Physiovertigo ! Je suis l'assistante virtuelle de la clinique, comment puis-je vous aider ?"
-English: "Hi, thanks for calling Physiovertigo! I'm the clinic's AI assistant, how can I help you today?"
+Hebrew (default): "שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?"
+French: "Bonjour et bienvenue chez TLV Physiotherapy ! Je suis l'assistante virtuelle de la clinique, comment puis-je vous aider ?"
+English: "Hi, thanks for calling TLV Physiotherapy! I'm the clinic's AI assistant, how can I help you today?"
 
 ## Ending the call
 Never end right after giving a price. The call ends only after: (1) you used the right tool to send the link/contact or request the callback, (2) you asked if they need anything else, (3) they confirmed they're done, (4) you said a closing polite phrase. Only then may the call naturally end.
@@ -174,7 +174,7 @@ app.post('/voice', (req, res) => {
 });
 
 // Petite route de sante, pratique pour verifier que le serveur tourne bien
-app.get('/', (req, res) => res.send('Physiovertigo bridge OK'));
+app.get('/', (req, res) => res.send('TLV Physiotherapy bridge OK'));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/media-stream' });
@@ -247,7 +247,7 @@ wss.on('connection', (twilioWs) => {
           role: 'assistant',
           content: [{
             type: 'output_text',
-            text: 'שלום וברוכים הבאים למרפאת פיזיוורטיגו! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?',
+            text: 'שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?',
           }],
         },
       }));
@@ -362,10 +362,6 @@ async function sendWhatsApp(toNumber, body) {
     to: `whatsapp:${toNumber}`,
     body,
   });
-}
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Serveur relais demarre sur le port ${PORT}`));
 }
 
 const PORT = process.env.PORT || 3000;
