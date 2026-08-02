@@ -14,19 +14,10 @@ const WebSocket = require('ws');
 const twilio = require('twilio');
 
 const app = express();
+app.set('trust proxy', true); // necessaire pour valider correctement les signatures Twilio derriere le proxy Railway
 app.use(express.urlencoded({ extended: false }));
 
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-
-// Diagnostic temporaire : verifie que la cle est bien chargee, sans jamais l'afficher en entier
-const debugKey = process.env.XAI_API_KEY || '';
-console.log(`[DIAGNOSTIC] XAI_API_KEY -> longueur: ${debugKey.length}, debut: "${debugKey.slice(0, 6)}", fin: "${debugKey.slice(-4)}"`);
-if (debugKey.length === 0) {
-  console.log('[DIAGNOSTIC] ATTENTION: la variable XAI_API_KEY est vide ou absente !');
-}
-if (debugKey !== debugKey.trim()) {
-  console.log('[DIAGNOSTIC] ATTENTION: la cle contient des espaces ou retours a la ligne en trop !');
-}
 
 // --- Contacts approuves ---
 const CONTACTS = {
@@ -67,7 +58,10 @@ Both the 50 NIS rate and the 110 NIS reimbursement on Rate B require: Clalit Mou
 A hafnaya is mandatory for both the 50 NIS rate and the 110 NIS Moushlam reimbursement on Rate B. Without a hafnaya, the patient cannot access either one. If a patient says they don't have a hafnaya, explain this clearly and tell them they'd need to get one from their Clalit doctor first.
 
 ### Pricing language rule
-When speaking Hebrew, always say prices as "<number> שקל" (e.g. "חמישים שקל" or "50 שקל") - never say or write "NIS", which gets mispronounced. In French say "NIS" normally (e.g. "50 NIS"). In English say "NIS" normally too.
+Always say prices using the word "shekel"/"shekels", never the abbreviation "NIS" (it gets mispronounced or sounds unnatural spoken aloud), in all three languages:
+- Hebrew: "<number> שקל" (e.g. "חמישים שקל" or "50 שקל")
+- French: "<number> shekels" (e.g. "50 shekels")
+- English: "<number> shekels" (e.g. "50 shekels")
 
 ## Approved Facts
 
@@ -104,38 +98,40 @@ Ask this question, then stop and wait. Do not proceed until the patient replies.
 If NO -> go to "Non-Clalit path" below.
 If YES -> continue to Step 1.
 
-Step 1 (Clalit confirmed) - Ask what's needed, in natural conversational terms (not clinical jargon):
+Step 1 (Clalit confirmed) - Explain the two options and ask which one, in a single turn:
+- Hebrew: "עם כללית מושלם יש שתי אפשרויות: אפשרות של 50 שקל שכוללת פיזיותרפיה רגילה, או אפשרות פרטית לטיפולים מיוחדים כמו ריצפת האגן, שיקום ווסטיבולרי, או גלי הלם. איזו אפשרות מתאימה לך?"
+- French: "Avec Clalit Moushlam, il y a deux options : une à 50 shekels qui couvre la physiothérapie classique, ou une option privée pour les soins spécialisés comme la rééducation périnéale, vestibulaire, ou les ondes de choc. Laquelle vous convient ?"
+- English: "With Clalit Moushlam, there are two options: a 50 shekel one covering classic physiotherapy, or a private option for specialized care like pelvic floor, vestibular, or shockwave therapy. Which one works for you?"
+
+If the patient already named a specific need before this point (e.g. "I have vertigo", "back pain"), you may skip straight to Step 2 using that information instead of asking again - but only if it's genuinely already clear from what they said.
+
+Step 2 - Route based on the answer:
+
+- 50 NIS chosen -> confirm it covers classic/general physiotherapy, mention the hafnaya requirement, use the send_rate_a_link tool. No need to repeat the exclusion list again - it was already stated in Step 1.
+
+- Private/specialized chosen, but which one isn't clear yet -> ask: "Which specific care do you need - classic physiotherapy, pelvic floor, vestibular, or shockwave?" (translated per language). Then route:
+  - Classic physiotherapy or vestibular or galei helem -> confirm price (350 NIS classic/galei helem, 400 NIS vestibular) with Julien, mention the 110 NIS reimbursement + hafnaya requirement, use the send_julien_link tool.
+  - Ritspat hagan -> confirm price 400 NIS with Charline, mention the 110 NIS reimbursement + hafnaya requirement, use the send_charline_contact tool.
+
+- If the patient describes a symptom rather than picking an option (back pain, sports injury, general ache, vague request) -> treat this as classic/general physiotherapy and ask them to choose between the two options from Step 1 if not already clear, or default to confirming it fits the 50 NIS rate if they seem to want the simplest/cheapest path.
+
+If the patient wants the 50 NIS rate for a need that falls under vestibular, ritspat hagan, or galei helem, no matter how they phrase it - "can I get the cheap one for my dizziness?", "I only want to pay 50 for this", "isn't there a discount for this treatment?", or any other wording with the same underlying request - NEVER agree to book that specialty under the 50 NIS rate, it is not covered under any circumstance. Recognize the underlying request, not fixed phrases. Clearly say so and offer the private rate instead:
+- Hebrew: "לצערי, האפשרות של 50 שקל לא כוללת את הטיפול הזה - הוא זמין רק באופן פרטי."
+- French: "Malheureusement, la formule à 50 shekels ne couvre pas ce soin - il n'est disponible qu'en formule privée."
+- English: "Unfortunately, the 50 shekel rate doesn't cover that care - it's only available privately."
+
+Step 3 - Callback (private option only): if the patient wants to talk before booking, use the request_callback tool (practitioner "julien" or "charline" per the care named). Never offer a callback on the 50 NIS rate.
+
+## Non-Clalit path (patient answered NO in Step 0)
+The 50 NIS rate and the 110 NIS Moushlam reimbursement do NOT apply - never offer or mention them, and never ask the two-option question above (there's only one option: private payment). Ask what's bothering them:
 - Hebrew: "מה מפריע לך? איזה סוג טיפול אתה צריך?"
 - French: "Qu'est-ce qui vous amène ? Quel type de soin recherchez-vous ?"
 - English: "What's bothering you? What type of care do you need?"
 
-Step 2 - Classify the answer. Patients often describe a symptom or general complaint (back pain, knee pain, sports injury, muscle soreness, "I need physiotherapy", "a regular session") rather than naming a specialty. Only classify as one of the 3 specialties below if the patient's description clearly and specifically matches it - otherwise, default to "classic/general physiotherapy".
+Then route: send_julien_link (classic/general, vestibular, or galei helem) or send_charline_contact (ritspat hagan) - without mentioning the Moushlam reimbursement. You may mention that their own private insurance (Harel, Migdal, Ayalon, etc.) might still reimburse part of the cost depending on their policy.
 
-- Vestibular (patient mentions vertigo, dizziness, balance issues) -> this only exists on Rate B. No rate question needed. Confirm price 400 NIS with Julien, mention the 110 NIS reimbursement + hafnaya requirement, use the send_julien_link tool.
-- Ritspat hagan (patient mentions pelvic floor, postpartum recovery, incontinence) -> this only exists on Rate B. No rate question needed. Confirm price 400 NIS with Charline, mention the 110 NIS reimbursement + hafnaya requirement, use the send_charline_contact tool.
-- Galei helem (patient specifically mentions shockwave therapy, or a chronic tendon/tissue issue their doctor said needs it) -> this only exists on Rate B. No rate question needed. Confirm price 350 NIS with Julien, mention the 110 NIS reimbursement + hafnaya requirement, use the send_julien_link tool.
-- Anything else (back pain, sports injury, general aches, vague requests, "just a regular session") -> this is classic/general physiotherapy, available on BOTH rates. Now ask the rate-choice question:
-  - Hebrew: "עם כללית יש שתי אפשרויות לטיפול פיזיותרפיה רגיל: 50 שקל ל-30 דקות, או אפשרות שמשלמים 350 שקל מראש ומקבלים החזר של 110 שקל בהמשך מכללית מושלם. איזו אפשרות מתאימה לך?"
-  - French: "Avec Clalit, il y a deux options pour une physiothérapie classique : 50 NIS pour 30 minutes, ou vous payez 350 NIS d'avance et êtes remboursé 110 NIS ensuite par Clalit Moushlam. Quelle option vous convient ?"
-  - English: "With Clalit, there are two options for classic physiotherapy: 50 NIS for 30 minutes, or you pay 350 NIS upfront and get reimbursed 110 NIS afterward by Clalit Moushlam. Which one works for you?"
-
-  If 50 NIS chosen: confirm it, mention the hafnaya requirement, AND explicitly state what's excluded before sending the link:
-  - Hebrew: "רק שתדע, האפשרות הזו כוללת פיזיותרפיה כללית אבל לא כוללת טיפול וסטיבולרי לסחרחורות, ריצפת האגן, או גלי הלם."
-  - French: "Sachez que cette formule couvre la physiothérapie générale, mais ne comprend pas la rééducation vestibulaire pour les vertiges, la rééducation périnéale, ni les ondes de choc."
-  - English: "Just so you know, this rate covers general physiotherapy but does not include vestibular therapy for vertigo/dizziness, pelvic floor rehabilitation, or shockwave therapy."
-  Then use the send_rate_a_link tool.
-
-  If private track chosen: confirm price 350 NIS with Julien, mention the 110 NIS reimbursement + hafnaya requirement, use the send_julien_link tool.
-
-If the patient wants the 50 NIS rate for a need that falls under vestibular, ritspat hagan, or galei helem, no matter how they phrase it - "can I get the cheap one for my dizziness?", "I only want to pay 50 for this", "isn't there a discount for this treatment?", or any other wording with the same underlying request - NEVER agree to book that specialty under the 50 NIS rate, it is not covered under any circumstance. Recognize the underlying request, not fixed phrases. Clearly say so and offer the private rate instead:
-- Hebrew: "לצערי, האפשרות של 50 שקל לא כוללת את הטיפול הזה - הוא זמין רק באופן פרטי."
-- French: "Malheureusement, la formule à 50 NIS ne couvre pas ce soin - il n'est disponible qu'en formule privée."
-- English: "Unfortunately, the 50 NIS rate doesn't cover that care - it's only available privately."
-
-Step 3 - Callback (Rate B only): if the patient wants to talk before booking, use the request_callback tool (practitioner "julien" or "charline" per the care named). Never offer a callback on the 50 NIS rate.
-
-## Non-Clalit path (patient answered NO in Step 0)
-The 50 NIS rate and the 110 NIS Moushlam reimbursement do NOT apply - never offer or mention them, and never ask a rate-choice question (there's only one option: private payment). Ask what's bothering them (same Step 1 question), classify the same way as Step 2 above, then route: send_julien_link (classic/general, vestibular, or galei helem) or send_charline_contact (ritspat hagan) - without mentioning the Moushlam reimbursement. You may mention that their own private insurance (Harel, Migdal, Ayalon, etc.) might still reimburse part of the cost depending on their policy.
+### Administrative categorization only
+You may ask what's bothering the patient only to identify which appointment category applies (classic physiotherapy, vestibular, ritspat hagan, or shockwave). This is administrative categorization, not a medical assessment. Never ask about symptom severity, duration, or details beyond what's needed to categorize the appointment. Never interpret symptoms, diagnose, or recommend treatment.
 
 ### Urgency requests
 Stay empathetic but firm - booking is only via the link, physiotherapists can't be reached to check availability manually.
@@ -152,7 +148,7 @@ English: "Hi, thanks for calling TLV Physiotherapy! I'm the clinic's AI assistan
 Never end right after giving a price. The call ends only after: (1) you used the right tool to send the link/contact or request the callback, (2) you asked if they need anything else, (3) they confirmed they're done, (4) you called the log_call_language tool once with the language used during this call (hebrew, french, or english), (5) you said a closing polite phrase. Only then may the call naturally end.
 
 ## Guardrails & Escalation
-Stay strictly in scope: rate selection, pricing, reimbursement, sending links/contacts for Clalit physiotherapy only - this line does not cover other services (e.g. acupuncture, massage). Never ask about symptoms, give medical advice, diagnoses, or interpret symptoms - even if asked directly. If a caller describes symptoms, a medical emergency, or self-harm, say you're an AI assistant and can't help with that, then use the request_callback tool. Be honest that you are an AI if asked.
+Stay strictly in scope: rate selection, pricing, reimbursement, sending links/contacts for Clalit physiotherapy only - this line does not cover other services (e.g. acupuncture, massage). You may ask what's bothering the patient only to categorize the appointment (see "Administrative categorization only" above) - naming a symptom for that purpose is fine. But never assess severity, interpret symptoms, give medical advice, diagnose, or recommend treatment, even if asked directly. If a caller asks you to interpret or explain their symptoms, or describes a medical emergency or self-harm, say you're an AI assistant and can't help with that, then use the request_callback tool. Be honest that you are an AI if asked.
 
 ## Voice & Communication Style
 Warm, efficient, brisk but not rushed. Short sentences, one idea per turn. After asking any question, stop and wait for the patient's real answer - never continue speaking as if you already received it. Say "I don't have that information" rather than guessing.`;
@@ -172,27 +168,59 @@ function normalizePhoneNumber(raw) {
 }
 
 // --- Webhook Twilio : appele quand un patient compose le numero ---
-app.post('/voice', (req, res) => {
+// twilio.webhook() valide la signature X-Twilio-Signature pour s'assurer que
+// la requete vient bien de Twilio et non d'un tiers qui aurait devine l'URL.
+app.post('/voice', twilio.webhook(), (req, res) => {
   const callerNumber = normalizePhoneNumber(req.body.From || '');
-  const host = req.headers.host;
+  const callSid = req.body.CallSid || '';
 
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Connect>
-    <Stream url="wss://${host}/media-stream">
-      <Parameter name="callerNumber" value="${callerNumber}" />
-    </Stream>
-  </Connect>
-</Response>`;
+  // URL fixe plutot que le header Host (qui peut etre falsifie par le client)
+  const wsUrl = `${process.env.PUBLIC_WS_URL}/media-stream`;
 
-  res.type('text/xml').send(twiml);
+  const VoiceResponse = twilio.twiml.VoiceResponse;
+  const response = new VoiceResponse();
+  const connect = response.connect();
+  const stream = connect.stream({ url: wsUrl });
+  stream.parameter({ name: 'callerNumber', value: callerNumber });
+  stream.parameter({ name: 'callSid', value: callSid });
+
+  res.type('text/xml').send(response.toString());
 });
 
 // Petite route de sante, pratique pour verifier que le serveur tourne bien
 app.get('/', (req, res) => res.send('TLV Physiotherapy bridge OK'));
 
+// Recoit le statut reel de livraison de chaque WhatsApp envoye (sent/delivered/failed/undelivered)
+app.post('/whatsapp-status', twilio.webhook(), (req, res) => {
+  console.log(`[WHATSAPP STATUS] ${req.body.To} -> ${req.body.MessageStatus} (SID: ${req.body.MessageSid})`);
+  res.sendStatus(200);
+});
+
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/media-stream' });
+const wss = new WebSocketServer({ noServer: true });
+
+// Valide la signature Twilio avant d'accepter la connexion WebSocket,
+// pour qu'un tiers connaissant l'URL ne puisse pas se connecter directement.
+server.on('upgrade', (req, socket, head) => {
+  if (req.url !== '/media-stream') {
+    socket.destroy();
+    return;
+  }
+
+  const signature = req.headers['x-twilio-signature'];
+  const url = `https://${req.headers.host}${req.url}`;
+  const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, {});
+
+  if (!isValid) {
+    console.error('Signature Twilio invalide sur la connexion WebSocket - connexion refusee.');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
 
 // --- Definition des outils que Grok Voice peut appeler ---
 const TOOLS = [
@@ -243,6 +271,7 @@ const TOOLS = [
 
 wss.on('connection', (twilioWs) => {
   let streamSid = null;
+  let callSid = null;
   let callerNumber = null;
   let callLanguage = null;
   let summaryNotificationSent = false;
@@ -302,7 +331,10 @@ wss.on('connection', (twilioWs) => {
     });
 
     grokWs.on('close', () => console.log('Connexion Grok Voice fermee'));
-    grokWs.on('error', (err) => console.error('Erreur Grok Voice:', err.message));
+    grokWs.on('error', (err) => {
+      console.error('Erreur Grok Voice:', err.message);
+      redirectCallToFallback();
+    });
 
     // Capture le detail exact renvoye par xAI quand la connexion echoue
     grokWs.on('unexpected-response', (req, res) => {
@@ -314,8 +346,26 @@ wss.on('connection', (twilioWs) => {
         console.error('Body:', body);
         console.error('-----------------------------');
       });
+      redirectCallToFallback();
     });
   };
+
+  // Si Grok Voice ne repond pas, on redirige l'appel en cours vers un message
+  // parle plutot que de laisser le patient dans un silence complet.
+  async function redirectCallToFallback() {
+    if (!callSid) return;
+    try {
+      const VoiceResponse = twilio.twiml.VoiceResponse;
+      const response = new VoiceResponse();
+      response.say(
+        { language: 'he-IL' },
+        'מצטערים, השירות הדיגיטלי אינו זמין כרגע. אנא נסו שוב מאוחר יותר.'
+      );
+      await twilioClient.calls(callSid).update({ twiml: response.toString() });
+    } catch (err) {
+      console.error('Erreur redirection appel vers message de secours:', err.message);
+    }
+  }
 
   async function handleFunctionCall(event) {
     const args = event.arguments ? JSON.parse(event.arguments) : {};
@@ -364,6 +414,7 @@ wss.on('connection', (twilioWs) => {
     switch (data.event) {
       case 'start':
         streamSid = data.start.streamSid;
+        callSid = data.start.customParameters?.callSid || data.start.callSid || null;
         callerNumber = data.start.customParameters?.callerNumber || null;
         connectToGrok();
         break;
@@ -418,6 +469,11 @@ const TEMPLATES = {
   callbackRequest: process.env.TEMPLATE_SID_CALLBACK_REQUEST,
 };
 
+// URL de suivi de livraison des messages WhatsApp (statut reel : sent/delivered/failed)
+const statusCallbackUrl = process.env.PUBLIC_WS_URL
+  ? `${process.env.PUBLIC_WS_URL.replace('wss://', 'https://')}/whatsapp-status`
+  : undefined;
+
 // Envoi via un template approuve (obligatoire pour un premier message hors fenetre 24h)
 async function sendWhatsAppTemplate(toNumber, templateSid, variables = {}) {
   if (!toNumber) throw new Error('Aucun numero de telephone disponible');
@@ -427,6 +483,7 @@ async function sendWhatsAppTemplate(toNumber, templateSid, variables = {}) {
     to: `whatsapp:${toNumber}`,
     contentSid: templateSid,
     contentVariables: JSON.stringify(variables),
+    ...(statusCallbackUrl && { statusCallback: statusCallbackUrl }),
   });
 }
 
