@@ -216,7 +216,19 @@ wss.on('connection', (twilioWs) => {
     });
 
     grokWs.on('close', () => console.log('Connexion Grok Voice fermee'));
-    grokWs.on('error', (err) => console.error('Erreur Grok Voice:', err));
+    grokWs.on('error', (err) => console.error('Erreur Grok Voice:', err.message));
+
+    // Capture le detail exact renvoye par xAI quand la connexion echoue
+    grokWs.on('unexpected-response', (req, res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        console.error('--- Reponse xAI detaillee ---');
+        console.error('Status:', res.statusCode);
+        console.error('Body:', body);
+        console.error('-----------------------------');
+      });
+    });
   };
 
   async function handleFunctionCall(event) {
