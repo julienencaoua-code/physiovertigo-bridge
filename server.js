@@ -199,8 +199,10 @@ wss.on('connection', (twilioWs) => {
         session: {
           instructions: CLALIT_PROMPT,
           voice: 'eve',
-          input_audio_format: 'g711_ulaw',
-          output_audio_format: 'g711_ulaw',
+          audio: {
+            input: { format: { type: 'audio/pcmu' } },
+            output: { format: { type: 'audio/pcmu' } },
+          },
           turn_detection: { type: 'server_vad' },
           tools: TOOLS,
         },
@@ -278,6 +280,9 @@ wss.on('connection', (twilioWs) => {
           output: JSON.stringify(result),
         },
       }));
+
+      // Sans ceci, l'IA execute l'action mais ne reprend jamais la parole ensuite
+      grokWs.send(JSON.stringify({ type: 'response.create' }));
     }
   }
 
