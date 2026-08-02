@@ -18,6 +18,16 @@ app.use(express.urlencoded({ extended: false }));
 
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
+// Diagnostic temporaire : verifie que la cle est bien chargee, sans jamais l'afficher en entier
+const debugKey = process.env.XAI_API_KEY || '';
+console.log(`[DIAGNOSTIC] XAI_API_KEY -> longueur: ${debugKey.length}, debut: "${debugKey.slice(0, 6)}", fin: "${debugKey.slice(-4)}"`);
+if (debugKey.length === 0) {
+  console.log('[DIAGNOSTIC] ATTENTION: la variable XAI_API_KEY est vide ou absente !');
+}
+if (debugKey !== debugKey.trim()) {
+  console.log('[DIAGNOSTIC] ATTENTION: la cle contient des espaces ou retours a la ligne en trop !');
+}
+
 // --- Informations approuvees (liens et contacts) ---
 const LINKS = {
   rateA: 'https://tidycal.com/levanaavitalmk/clalit-3oz94xd',
