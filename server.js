@@ -19,11 +19,18 @@ app.use(express.urlencoded({ extended: false }));
 
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// --- Contacts approuves ---
+// --- Contacts approuves (definis dans les variables Railway) ---
 const CONTACTS = {
-  julien: '+972546385978',
-  charline: '+972544604101',
+  julien: process.env.JULIEN_PHONE,
+  charline: process.env.CHARLINE_PHONE,
 };
+
+// Empeche le serveur de demarrer silencieusement avec des numeros absents ou mal formes
+for (const [name, phone] of Object.entries(CONTACTS)) {
+  if (!phone || !/^\+\d{8,15}$/.test(phone)) {
+    throw new Error(`Variable de telephone invalide ou absente : ${name} (verifiez JULIEN_PHONE / CHARLINE_PHONE dans Railway)`);
+  }
+}
 
 // --- Le prompt Clalit final, tel qu'on l'a valide ensemble ---
 const CLALIT_PROMPT = `## Role & Persona
@@ -88,32 +95,27 @@ May also reimburse part of Rate B sessions depending on the patient's policy, re
 
 CRITICAL turn-taking rule: every step below that asks a question is ONE conversational turn. After asking a question, STOP talking and wait for the patient's actual spoken answer. Never assume, guess, or continue as if the patient already answered. Never answer your own question. Only move to the next step after the patient has actually responded.
 
-Step 0 - Right after the greeting, confirm eligibility:
-- Hebrew: "קו זה מיועד למטופלי כללית מושלם או פלטינום - זה המקרה שלך?"
-- French: "Cette ligne est destinée aux patients Clalit Moushlam ou Platinum, est-ce bien votre cas ?"
-- English: "This line is for Clalit Moushlam or Platinum patients, is that your case?"
-
-Ask this question, then stop and wait. Do not proceed until the patient replies.
+Step 0 - The forced greeting already asks the eligibility question ("Do you have Clalit Moushlam or Platinum?"). Wait for the patient's actual answer - do not ask it again yourself.
 
 If NO -> go to "Non-Clalit path" below.
 If YES -> continue to Step 1.
 
-Step 1 (Clalit confirmed) - Explain the two options and ask which one, in a single turn:
-- Hebrew: "עם כללית מושלם יש שתי אפשרויות: אפשרות של 50 שקל שכוללת פיזיותרפיה רגילה, או אפשרות פרטית לטיפולים מיוחדים כמו ריצפת האגן, שיקום ווסטיבולרי, או גלי הלם. איזו אפשרות מתאימה לך?"
-- French: "Avec Clalit Moushlam, il y a deux options : une à 50 shekels qui couvre la physiothérapie classique, ou une option privée pour les soins spécialisés comme la rééducation périnéale, vestibulaire, ou les ondes de choc. Laquelle vous convient ?"
-- English: "With Clalit Moushlam, there are two options: a 50 shekel one covering classic physiotherapy, or a private option for specialized care like pelvic floor, vestibular, or shockwave therapy. Which one works for you?"
+Step 1 (Clalit confirmed) - Explain the two options and ask which one, in a single turn. Both options can include classic/general physiotherapy - the private one additionally covers specialized care:
+- Hebrew: "עם כללית מושלם יש שתי אפשרויות לפיזיותרפיה: אפשרות של 50 שקל ל-30 דקות לפיזיותרפיה רגילה, או טיפול פרטי של 45 דקות לפיזיותרפיה רגילה או לטיפולים מיוחדים כמו ריצפת האגן, שיקום ווסטיבולרי, או גלי הלם. איזו אפשרות מתאימה לך?"
+- French: "Avec Clalit Moushlam, il y a deux options : une séance de physiothérapie classique de 30 minutes à 50 shekels, ou une séance privée de 45 minutes pour la physiothérapie classique ou les soins spécialisés comme la rééducation périnéale, vestibulaire, ou les ondes de choc. Laquelle vous convient ?"
+- English: "With Clalit Moushlam, there are two options: a 30-minute classic physiotherapy session for 50 shekels, or a private 45-minute session for classic physiotherapy or specialized care like pelvic floor, vestibular, or shockwave therapy. Which one works for you?"
 
 If the patient already named a specific need before this point (e.g. "I have vertigo", "back pain"), you may skip straight to Step 2 using that information instead of asking again - but only if it's genuinely already clear from what they said.
 
 Step 2 - Route based on the answer:
 
-- 50 NIS chosen -> confirm it covers classic/general physiotherapy, mention the hafnaya requirement, use the send_rate_a_link tool. No need to repeat the exclusion list again - it was already stated in Step 1.
+- 50 shekel chosen -> confirm it covers classic/general physiotherapy, mention the hafnaya requirement, use the send_rate_a_link tool with care_type set to "classic". No need to repeat the exclusion list again - it was already stated in Step 1.
 
 - Private/specialized chosen, but which one isn't clear yet -> ask: "Which specific care do you need - classic physiotherapy, pelvic floor, vestibular, or shockwave?" (translated per language). Then route:
   - Classic physiotherapy or vestibular or galei helem -> confirm price (350 NIS classic/galei helem, 400 NIS vestibular) with Julien, mention the 110 NIS reimbursement + hafnaya requirement, use the send_julien_link tool.
   - Ritspat hagan -> confirm price 400 NIS with Charline, mention the 110 NIS reimbursement + hafnaya requirement, use the send_charline_contact tool.
 
-- If the patient describes a symptom rather than picking an option (back pain, sports injury, general ache, vague request) -> treat this as classic/general physiotherapy and ask them to choose between the two options from Step 1 if not already clear, or default to confirming it fits the 50 NIS rate if they seem to want the simplest/cheapest path.
+- If the patient describes a symptom rather than picking an option (back pain, sports injury, general ache, vague request) -> treat this as classic/general physiotherapy. Never select an option on their behalf - ask them explicitly to choose between the 50 shekel option and the private 45-minute option, and wait for their answer before calling any booking tool.
 
 If the patient wants the 50 NIS rate for a need that falls under vestibular, ritspat hagan, or galei helem, no matter how they phrase it - "can I get the cheap one for my dizziness?", "I only want to pay 50 for this", "isn't there a discount for this treatment?", or any other wording with the same underlying request - NEVER agree to book that specialty under the 50 NIS rate, it is not covered under any circumstance. Recognize the underlying request, not fixed phrases. Clearly say so and offer the private rate instead:
 - Hebrew: "לצערי, האפשרות של 50 שקל לא כוללת את הטיפול הזה - הוא זמין רק באופן פרטי."
@@ -140,9 +142,9 @@ Stay empathetic but firm - booking is only via the link, physiotherapists can't 
 Ask if the patient wants to be called back on the same number they're calling from, or a different one. If same number: call request_callback with only the practitioner argument, do not include phone_number. If different: ask them to say the number digit by digit, repeat it back to confirm, then call request_callback with that number as phone_number.
 
 ## Greeting
-Hebrew (default): "שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?"
-French: "Bonjour et bienvenue chez TLV Physiotherapy ! Je suis l'assistante virtuelle de la clinique, comment puis-je vous aider ?"
-English: "Hi, thanks for calling TLV Physiotherapy! I'm the clinic's AI assistant, how can I help you today?"
+The Hebrew greeting is delivered automatically as a forced message (already includes the eligibility question) - you don't need to say it yourself. If the patient responds in French or English, switch language and continue naturally from there. For reference, the equivalent in those languages would be:
+French: "Bonjour et bienvenue chez TLV Physiotherapy ! Je suis l'assistante virtuelle de la clinique. Cette ligne est destinée aux patients Clalit Moushlam ou Platinum. Avez-vous Clalit Moushlam ou Platinum ?"
+English: "Hi, thanks for calling TLV Physiotherapy! I'm the clinic's AI assistant. This line is for Clalit Moushlam or Platinum patients. Do you have Clalit Moushlam or Platinum?"
 
 ## Ending the call
 Never end right after giving a price. The call ends only after: (1) you used the right tool to send the link/contact or request the callback, (2) you asked if they need anything else, (3) they confirmed they're done, (4) you called the log_call_language tool once with the language used during this call (hebrew, french, or english), (5) you said a closing polite phrase. Only then may the call naturally end.
@@ -192,7 +194,12 @@ app.get('/', (req, res) => res.send('TLV Physiotherapy bridge OK'));
 
 // Recoit le statut reel de livraison de chaque WhatsApp envoye (sent/delivered/failed/undelivered)
 app.post('/whatsapp-status', twilio.webhook(), (req, res) => {
-  console.log(`[WHATSAPP STATUS] ${req.body.To} -> ${req.body.MessageStatus} (SID: ${req.body.MessageSid})`);
+  console.log('[WHATSAPP STATUS]', {
+    to: req.body.To,
+    status: req.body.MessageStatus,
+    sid: req.body.MessageSid,
+    errorCode: req.body.ErrorCode || null,
+  });
   res.sendStatus(200);
 });
 
@@ -208,7 +215,8 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const signature = req.headers['x-twilio-signature'];
-  const url = `https://${req.headers.host}${req.url}`;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const url = process.env.PUBLIC_WS_VALIDATION_URL || `${proto}://${req.headers.host}${req.url}`;
   const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, {});
 
   if (!isValid) {
@@ -227,8 +235,18 @@ const TOOLS = [
   {
     type: 'function',
     name: 'send_rate_a_link',
-    description: 'Envoie le lien de reservation de la formule a 50 NIS au patient par WhatsApp.',
-    parameters: { type: 'object', properties: {}, required: [] },
+    description: 'Envoie le lien de reservation de la formule a 50 shekels au patient par WhatsApp. Ne fonctionne que pour la physiotherapie classique.',
+    parameters: {
+      type: 'object',
+      properties: {
+        care_type: {
+          type: 'string',
+          enum: ['classic'],
+          description: 'Doit toujours etre "classic" - cette formule ne couvre aucune specialite.',
+        },
+      },
+      required: ['care_type'],
+    },
   },
   {
     type: 'function',
@@ -276,6 +294,28 @@ wss.on('connection', (twilioWs) => {
   let callLanguage = null;
   let summaryNotificationSent = false;
   let grokWs = null;
+  let pendingFunctionCalls = [];
+  let markResolvers = {};
+  let callEndedNormally = false;
+  let fallbackTriggered = false;
+  let userIsSpeaking = false;
+
+  // Attend que Twilio ait fini de jouer l'audio en cours avant de continuer,
+  // pour eviter que deux reponses se chevauchent (voir doc xAI "Avoid Audio Overlap").
+  function waitForPlaybackMark() {
+    const markName = `mark-${Date.now()}`;
+    return new Promise((resolve) => {
+      markResolvers[markName] = resolve;
+      twilioWs.send(JSON.stringify({ event: 'mark', streamSid, mark: { name: markName } }));
+      // Filet de securite : si Twilio ne renvoie jamais le mark, on ne bloque pas indefiniment
+      setTimeout(() => {
+        if (markResolvers[markName]) {
+          delete markResolvers[markName];
+          resolve();
+        }
+      }, 3000);
+    });
+  }
 
   const connectToGrok = () => {
     grokWs = new WebSocket('wss://api.x.ai/v1/realtime?model=grok-voice-latest', {
@@ -297,15 +337,18 @@ wss.on('connection', (twilioWs) => {
         },
       }));
 
-      // Accueil force en hebreu, mot pour mot garanti (pas d'improvisation possible sur la langue)
+      // Accueil + question d'eligibilite forces en hebreu, mot pour mot garanti,
+      // et non-interruptible pour etre sur que la question complete est bien posee
+      // avant que le patient puisse repondre.
       grokWs.send(JSON.stringify({
         type: 'conversation.item.create',
         item: {
           type: 'force_message',
           role: 'assistant',
+          interruptible: false,
           content: [{
             type: 'output_text',
-            text: 'שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?',
+            text: 'שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה. קו זה מיועד למטופלי כללית מושלם או פלטינום. האם יש לך כללית מושלם או פלטינום?',
           }],
         },
       }));
@@ -313,24 +356,82 @@ wss.on('connection', (twilioWs) => {
     });
 
     grokWs.on('message', async (raw) => {
-      const event = JSON.parse(raw.toString());
-
-      // Audio genere par Grok Voice -> on le renvoie a Twilio pour que le patient l'entende
-      if (event.type === 'response.output_audio.delta' && event.delta && streamSid) {
-        twilioWs.send(JSON.stringify({
-          event: 'media',
-          streamSid,
-          media: { payload: event.delta },
-        }));
+      let event;
+      try {
+        event = JSON.parse(raw.toString());
+      } catch (err) {
+        console.error('Message Grok JSON invalide:', err.message);
+        return;
       }
 
-      // Grok Voice veut executer une action concrete
-      if (event.type === 'response.function_call_arguments.done') {
-        await handleFunctionCall(event);
+      try {
+        // Le patient se remet a parler pendant que l'IA parle encore -> on vide
+        // le buffer audio Twilio pour que l'IA s'arrete net plutot que de continuer
+        // par-dessus la voix du patient.
+        if (event.type === 'input_audio_buffer.speech_started' && streamSid) {
+          userIsSpeaking = true;
+          twilioWs.send(JSON.stringify({
+            event: 'clear',
+            streamSid,
+          }));
+        }
+
+        if (event.type === 'input_audio_buffer.speech_stopped') {
+          userIsSpeaking = false;
+        }
+
+        // Audio genere par Grok Voice -> on le renvoie a Twilio pour que le patient l'entende.
+        // On ignore un paquet audio qui arriverait juste apres le 'clear' ci-dessus
+        // (paquet deja en transit avant l'interruption), pour ne pas re-remplir le
+        // buffer Twilio pendant que le patient est en train de parler.
+        if (event.type === 'response.output_audio.delta' && event.delta && streamSid && !userIsSpeaking) {
+          twilioWs.send(JSON.stringify({
+            event: 'media',
+            streamSid,
+            media: { payload: event.delta },
+          }));
+        }
+
+        // Grok Voice veut executer une action - on la met en attente plutot que
+        // de repondre tout de suite, au cas ou plusieurs outils arrivent d'un coup
+        // dans la meme reponse (cf. doc xAI "Parallel Tool Calling").
+        if (event.type === 'response.function_call_arguments.done') {
+          pendingFunctionCalls.push(event);
+        }
+
+        // Une fois la reponse terminee, on traite tous les outils en attente d'un coup,
+        // puis on attend la fin de lecture audio avant de relancer la conversation.
+        if (event.type === 'response.done' && pendingFunctionCalls.length > 0) {
+          const callsToProcess = pendingFunctionCalls;
+          pendingFunctionCalls = [];
+
+          const results = await Promise.all(callsToProcess.map(executeFunctionCall));
+
+          for (const r of results) {
+            grokWs.send(JSON.stringify({
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: r.call_id,
+                output: JSON.stringify(r.output),
+              },
+            }));
+          }
+
+          await waitForPlaybackMark();
+          grokWs.send(JSON.stringify({ type: 'response.create' }));
+        }
+      } catch (err) {
+        console.error('Erreur traitement evenement Grok:', err.message);
       }
     });
 
-    grokWs.on('close', () => console.log('Connexion Grok Voice fermee'));
+    grokWs.on('close', () => {
+      console.log('Connexion Grok Voice fermee');
+      if (!callEndedNormally) {
+        redirectCallToFallback();
+      }
+    });
     grokWs.on('error', (err) => {
       console.error('Erreur Grok Voice:', err.message);
       redirectCallToFallback();
@@ -350,10 +451,13 @@ wss.on('connection', (twilioWs) => {
     });
   };
 
-  // Si Grok Voice ne repond pas, on redirige l'appel en cours vers un message
-  // parle plutot que de laisser le patient dans un silence complet.
+  // Si Grok Voice ne repond pas ou coupe la connexion en cours d'appel, on
+  // redirige l'appel en cours vers un message parle plutot que de laisser
+  // le patient dans un silence complet. Ne se declenche qu'une seule fois,
+  // et jamais apres une fin d'appel normale (voir Twilio 'stop').
   async function redirectCallToFallback() {
-    if (!callSid) return;
+    if (!callSid || fallbackTriggered || callEndedNormally) return;
+    fallbackTriggered = true;
     try {
       const VoiceResponse = twilio.twiml.VoiceResponse;
       const response = new VoiceResponse();
@@ -367,12 +471,15 @@ wss.on('connection', (twilioWs) => {
     }
   }
 
-  async function handleFunctionCall(event) {
+  async function executeFunctionCall(event) {
     const args = event.arguments ? JSON.parse(event.arguments) : {};
     let result = { status: 'success' };
 
     try {
       if (event.name === 'send_rate_a_link') {
+        if (args.care_type !== 'classic') {
+          throw new Error(`Refus: send_rate_a_link appele avec care_type="${args.care_type}" - la formule 50 shekels ne couvre que la physiotherapie classique.`);
+        }
         await sendWhatsAppTemplate(callerNumber, TEMPLATES.rateA);
       } else if (event.name === 'send_julien_link') {
         await sendWhatsAppTemplate(callerNumber, TEMPLATES.julien);
@@ -393,23 +500,17 @@ wss.on('connection', (twilioWs) => {
       result = { status: 'failed', error: err.message };
     }
 
-    if (grokWs && grokWs.readyState === WebSocket.OPEN) {
-      grokWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'function_call_output',
-          call_id: event.call_id,
-          output: JSON.stringify(result),
-        },
-      }));
-
-      // Sans ceci, l'IA execute l'action mais ne reprend jamais la parole ensuite
-      grokWs.send(JSON.stringify({ type: 'response.create' }));
-    }
+    return { call_id: event.call_id, output: result };
   }
 
   twilioWs.on('message', (msg) => {
-    const data = JSON.parse(msg.toString());
+    let data;
+    try {
+      data = JSON.parse(msg.toString());
+    } catch (err) {
+      console.error('Message Twilio JSON invalide:', err.message);
+      return;
+    }
 
     switch (data.event) {
       case 'start':
@@ -429,9 +530,20 @@ wss.on('connection', (twilioWs) => {
         }
         break;
 
+      case 'mark': {
+        // Confirmation de Twilio que l'audio jusqu'a ce point a fini de jouer
+        const markName = data.mark?.name;
+        if (markName && markResolvers[markName]) {
+          markResolvers[markName]();
+          delete markResolvers[markName];
+        }
+        break;
+      }
+
       case 'stop':
         // Garantit une notification a Julien meme si l'appel s'est termine
         // brutalement, sans que l'IA ait eu l'occasion d'utiliser l'outil de langue.
+        callEndedNormally = true;
         sendCallSummary(callLanguage);
         if (grokWs) grokWs.close();
         break;
