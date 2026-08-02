@@ -205,13 +205,20 @@ wss.on('connection', (twilioWs) => {
           tools: TOOLS,
         },
       }));
+
+      // Sans ceci, l'IA reste silencieuse et attend que le patient parle en premier.
+      // On demande explicitement une premiere reponse pour declencher l'accueil.
+      grokWs.send(JSON.stringify({
+        type: 'response.create',
+        response: { modalities: ['audio', 'text'] },
+      }));
     });
 
     grokWs.on('message', async (raw) => {
       const event = JSON.parse(raw.toString());
 
       // Audio genere par Grok Voice -> on le renvoie a Twilio pour que le patient l'entende
-      if (event.type === 'response.audio.delta' && event.delta && streamSid) {
+      if (event.type === 'response.output_audio.delta' && event.delta && streamSid) {
         twilioWs.send(JSON.stringify({
           event: 'media',
           streamSid,
@@ -220,7 +227,7 @@ wss.on('connection', (twilioWs) => {
       }
 
       // Grok Voice veut executer une action concrete
-      if (event.type === 'response.function_call') {
+      if (event.type === 'response.function_call_arguments.done') {
         await handleFunctionCall(event);
       }
     });
