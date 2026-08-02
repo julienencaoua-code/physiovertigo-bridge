@@ -142,9 +142,23 @@ Stay strictly in scope: rate selection, pricing, reimbursement, sending links/co
 ## Voice & Communication Style
 Warm, efficient, brisk but not rushed. Short sentences, one idea per turn. Say "I don't have that information" rather than guessing.`;
 
+// Corrige les formats de numero courants (ex: 0546384978 -> +972546384978)
+// et journalise la valeur brute pour diagnostiquer les cas encore mal formes.
+function normalizePhoneNumber(raw) {
+  const trimmed = (raw || '').trim();
+  console.log(`[DIAGNOSTIC] Numero brut recu: "${trimmed}"`);
+
+  if (trimmed.startsWith('+')) return trimmed;
+  if (trimmed.startsWith('0')) return `+972${trimmed.slice(1)}`;
+  if (trimmed.startsWith('972')) return `+${trimmed}`;
+
+  console.log(`[DIAGNOSTIC] ATTENTION: format de numero non reconnu, envoi tel quel: "${trimmed}"`);
+  return trimmed;
+}
+
 // --- Webhook Twilio : appele quand un patient compose le numero ---
 app.post('/voice', (req, res) => {
-  const callerNumber = req.body.From || '';
+  const callerNumber = normalizePhoneNumber(req.body.From || '');
   const host = req.headers.host;
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -348,6 +362,10 @@ async function sendWhatsApp(toNumber, body) {
     to: `whatsapp:${toNumber}`,
     body,
   });
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Serveur relais demarre sur le port ${PORT}`));
 }
 
 const PORT = process.env.PORT || 3000;
