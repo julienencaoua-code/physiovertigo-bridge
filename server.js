@@ -28,11 +28,7 @@ if (debugKey !== debugKey.trim()) {
   console.log('[DIAGNOSTIC] ATTENTION: la cle contient des espaces ou retours a la ligne en trop !');
 }
 
-// --- Informations approuvees (liens et contacts) ---
-const LINKS = {
-  rateA: 'https://tidycal.com/levanaavitalmk/clalit-3oz94xd',
-  rateBJulien: 'https://tidycal.com/tlv-physio/physiotherapy',
-};
+// --- Contacts approuves ---
 const CONTACTS = {
   julien: '+972546385978',
   charline: '+972544604101',
@@ -79,12 +75,12 @@ When speaking Hebrew, always say prices as "<number> שקל" (e.g. "חמישים
 Open 9:00-19:00. Druyanov 5, Tel Aviv, ground floor, wheelchair accessible. Parking: Louria Street 5 (Central Park lot, rates via Central Park app).
 
 ### The two rates (both Clalit Moushlam/Platinum related - internal labels only, never say "Rate A/B" aloud)
-- Rate A - 50 NIS, 30 minutes: pre-negotiated Clalit rate, no separate reimbursement. General/standard physiotherapy only - does NOT cover vestibular physio, ritspat hagan, or galei helem. Requires hafnaya. Only available to Clalit Moushlam/Platinum patients.
-- Rate B - 45 minutes, pay upfront, reimbursed 110 NIS after by Clalit Moushlam (requires hafnaya, Clalit Moushlam/Platinum only):
-  - Classic physiotherapy (Julien): 350 NIS.
-  - Galei helem (Julien): 350 NIS.
-  - Vestibular physiotherapy (Julien): 400 NIS.
-  - Ritspat hagan (Charline): 400 NIS.
+- Rate A - price: 50 NIS. Duration: 30 minutes. These are two separate numbers - never say "50 minutes" or confuse the price with the duration. Pre-negotiated Clalit rate, no separate reimbursement. General/standard physiotherapy only - does NOT cover vestibular physio, ritspat hagan, or galei helem. Requires hafnaya. Only available to Clalit Moushlam/Platinum patients.
+- Rate B - duration: 45 minutes, pay upfront, reimbursed 110 NIS after by Clalit Moushlam (requires hafnaya, Clalit Moushlam/Platinum only):
+  - Classic physiotherapy (Julien): price 350 NIS.
+  - Galei helem (Julien): price 350 NIS.
+  - Vestibular physiotherapy (Julien): price 400 NIS.
+  - Ritspat hagan (Charline): price 400 NIS.
 
 Note: classic physiotherapy exists on BOTH rates. This is resolved upfront in Step 1 below (the patient picks the rate before naming the specific care), so it is never ambiguous in practice.
 
@@ -96,10 +92,14 @@ May also reimburse part of Rate B sessions depending on the patient's policy, re
 
 ## THE SINGLE DECISION TREE - use this for every call
 
+CRITICAL turn-taking rule: every step below that asks a question is ONE conversational turn. After asking a question, STOP talking and wait for the patient's actual spoken answer. Never assume, guess, or continue as if the patient already answered. Never answer your own question. Only move to the next step after the patient has actually responded.
+
 Step 0 - Right after the greeting, confirm eligibility:
 - Hebrew: "קו זה מיועד למטופלי כללית מושלם או פלטינום - זה המקרה שלך?"
 - French: "Cette ligne est destinée aux patients Clalit Moushlam ou Platinum, est-ce bien votre cas ?"
 - English: "This line is for Clalit Moushlam or Platinum patients, is that your case?"
+
+Ask this question, then stop and wait. Do not proceed until the patient replies.
 
 If NO -> go to "Non-Clalit path" below.
 If YES -> continue to Step 1.
@@ -126,7 +126,7 @@ The 50 NIS rate and the 110 NIS Moushlam reimbursement do NOT apply - never offe
 Stay empathetic but firm - booking is only via the link, physiotherapists can't be reached to check availability manually.
 
 ### Callback process
-Ask if the patient wants to be called back on the same number they're calling from, or a different one. If different, ask them to say the number digit by digit and repeat it back to confirm before calling the request_callback tool.
+Ask if the patient wants to be called back on the same number they're calling from, or a different one. If same number: call request_callback with only the practitioner argument, do not include phone_number. If different: ask them to say the number digit by digit, repeat it back to confirm, then call request_callback with that number as phone_number.
 
 ## Greeting
 Hebrew (default): "שלום וברוכים הבאים ל-TLV Physiotherapy! אני העוזרת הדיגיטלית של המרפאה, איך אפשר לעזור לך היום?"
@@ -134,13 +134,13 @@ French: "Bonjour et bienvenue chez TLV Physiotherapy ! Je suis l'assistante virt
 English: "Hi, thanks for calling TLV Physiotherapy! I'm the clinic's AI assistant, how can I help you today?"
 
 ## Ending the call
-Never end right after giving a price. The call ends only after: (1) you used the right tool to send the link/contact or request the callback, (2) you asked if they need anything else, (3) they confirmed they're done, (4) you said a closing polite phrase. Only then may the call naturally end.
+Never end right after giving a price. The call ends only after: (1) you used the right tool to send the link/contact or request the callback, (2) you asked if they need anything else, (3) they confirmed they're done, (4) you called the log_call_language tool once with the language used during this call (hebrew, french, or english), (5) you said a closing polite phrase. Only then may the call naturally end.
 
 ## Guardrails & Escalation
 Stay strictly in scope: rate selection, pricing, reimbursement, sending links/contacts for Clalit physiotherapy only - this line does not cover other services (e.g. acupuncture, massage). Never ask about symptoms, give medical advice, diagnoses, or interpret symptoms - even if asked directly. If a caller describes symptoms, a medical emergency, or self-harm, say you're an AI assistant and can't help with that, then use the request_callback tool. Be honest that you are an AI if asked.
 
 ## Voice & Communication Style
-Warm, efficient, brisk but not rushed. Short sentences, one idea per turn. Say "I don't have that information" rather than guessing.`;
+Warm, efficient, brisk but not rushed. Short sentences, one idea per turn. After asking any question, stop and wait for the patient's real answer - never continue speaking as if you already received it. Say "I don't have that information" rather than guessing.`;
 
 // Corrige les formats de numero courants (ex: 0546384978 -> +972546384978)
 // et journalise la valeur brute pour diagnostiquer les cas encore mal formes.
@@ -202,14 +202,26 @@ const TOOLS = [
   {
     type: 'function',
     name: 'request_callback',
-    description: "Demande a Julien ou Charline de rappeler le patient.",
+    description: "Demande a Julien ou Charline de rappeler le patient. Omettre phone_number si le patient veut etre rappele sur le meme numero que celui de l'appel.",
     parameters: {
       type: 'object',
       properties: {
         practitioner: { type: 'string', enum: ['julien', 'charline'] },
-        phone_number: { type: 'string', description: 'Numero a rappeler, format international' },
+        phone_number: { type: 'string', description: 'Uniquement si le patient donne un AUTRE numero que celui avec lequel il appelle. Ne pas remplir sinon.' },
       },
-      required: ['practitioner', 'phone_number'],
+      required: ['practitioner'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'log_call_language',
+    description: "A appeler une seule fois, juste avant de clore l'appel normalement (avant la phrase de politesse finale), pour indiquer la langue utilisee pendant la conversation.",
+    parameters: {
+      type: 'object',
+      properties: {
+        language: { type: 'string', enum: ['hebrew', 'french', 'english'] },
+      },
+      required: ['language'],
     },
   },
 ];
@@ -217,6 +229,8 @@ const TOOLS = [
 wss.on('connection', (twilioWs) => {
   let streamSid = null;
   let callerNumber = null;
+  let callLanguage = null;
+  let summaryNotificationSent = false;
   let grokWs = null;
 
   const connectToGrok = () => {
@@ -294,15 +308,24 @@ wss.on('connection', (twilioWs) => {
 
     try {
       if (event.name === 'send_rate_a_link') {
-        await sendWhatsApp(callerNumber, `Voici le lien pour prendre rendez-vous (formule a 50 NIS): ${LINKS.rateA}`);
+        await sendWhatsAppTemplate(callerNumber, TEMPLATES.rateA);
       } else if (event.name === 'send_julien_link') {
-        await sendWhatsApp(callerNumber, `Voici le lien pour prendre rendez-vous avec Julien: ${LINKS.rateBJulien}`);
+        await sendWhatsAppTemplate(callerNumber, TEMPLATES.julien);
       } else if (event.name === 'send_charline_contact') {
-        await sendWhatsApp(callerNumber, `Voici le contact WhatsApp de Charline pour prendre rendez-vous: ${CONTACTS.charline}`);
+        await sendWhatsAppTemplate(callerNumber, TEMPLATES.charline);
       } else if (event.name === 'request_callback') {
+        // TODO: en attente de decision - ce message texte libre echouera tant qu'un
+        // 4eme template (ou un envoi par SMS) n'est pas mis en place pour ce cas.
         const target = args.practitioner === 'charline' ? CONTACTS.charline : CONTACTS.julien;
         const numberToCall = args.phone_number || callerNumber;
-        await sendWhatsApp(target, `Un patient de la ligne Clalit souhaite etre rappele au ${numberToCall}.`);
+        await twilioClient.messages.create({
+          from: process.env.TWILIO_WHATSAPP_FROM,
+          to: `whatsapp:${target}`,
+          body: `Un patient de la ligne Clalit souhaite etre rappele au ${numberToCall}.`,
+        });
+      } else if (event.name === 'log_call_language') {
+        callLanguage = args.language;
+        await sendCallSummary(callLanguage);
       }
     } catch (err) {
       console.error('Erreur outil', event.name, err);
@@ -345,6 +368,9 @@ wss.on('connection', (twilioWs) => {
         break;
 
       case 'stop':
+        // Garantit une notification a Julien meme si l'appel s'est termine
+        // brutalement, sans que l'IA ait eu l'occasion d'utiliser l'outil de langue.
+        sendCallSummary(callLanguage);
         if (grokWs) grokWs.close();
         break;
     }
@@ -353,14 +379,42 @@ wss.on('connection', (twilioWs) => {
   twilioWs.on('close', () => {
     if (grokWs) grokWs.close();
   });
+
+  // Notifie Julien apres CET appel precis (langue detectee ou "Non detecte" par defaut)
+  async function sendCallSummary(language) {
+    if (summaryNotificationSent) return;
+    summaryNotificationSent = true;
+
+    const timestamp = new Date().toLocaleString('fr-FR', { timeZone: 'Asia/Jerusalem' });
+    try {
+      await sendWhatsAppTemplate(CONTACTS.julien, TEMPLATES.callSummary, {
+        '1': callerNumber || 'Numero inconnu',
+        '2': timestamp,
+        '3': language || 'Non detecte',
+      });
+    } catch (err) {
+      console.error("Erreur envoi resume d'appel:", err.message);
+    }
+  }
 });
 
-async function sendWhatsApp(toNumber, body) {
+// SID des templates WhatsApp approuves par Meta - a remplir dans Railway une fois chaque template valide
+const TEMPLATES = {
+  rateA: process.env.TEMPLATE_SID_RATE_A,
+  julien: process.env.TEMPLATE_SID_JULIEN,
+  charline: process.env.TEMPLATE_SID_CHARLINE,
+  callSummary: process.env.TEMPLATE_SID_CALL_SUMMARY,
+};
+
+// Envoi via un template approuve (obligatoire pour un premier message hors fenetre 24h)
+async function sendWhatsAppTemplate(toNumber, templateSid, variables = {}) {
   if (!toNumber) throw new Error('Aucun numero de telephone disponible');
+  if (!templateSid) throw new Error('Template SID manquant - a-t-il ete approuve et ajoute en variable Railway ?');
   return twilioClient.messages.create({
     from: process.env.TWILIO_WHATSAPP_FROM,
     to: `whatsapp:${toNumber}`,
-    body,
+    contentSid: templateSid,
+    contentVariables: JSON.stringify(variables),
   });
 }
 
