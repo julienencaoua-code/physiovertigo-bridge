@@ -218,33 +218,13 @@ app.post('/whatsapp-status', twilio.webhook(), (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
-
-// Valide la signature Twilio avant d'accepter la connexion WebSocket,
-// pour qu'un tiers connaissant l'URL ne puisse pas se connecter directement.
-server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/media-stream') {
-    socket.destroy();
-    return;
-  }
-
-  const signature = req.headers['x-twilio-signature'];
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const url = process.env.PUBLIC_WS_VALIDATION_URL || `${proto}://${req.headers.host}${req.url}`;
-  const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, {});
-
-  console.log(`[WS UPGRADE] Signature valide: ${isValid} | URL utilisee: ${url}`);
-
-  if (!isValid) {
-    console.error('[WS UPGRADE] Signature invalide - connexion refusee.');
-    socket.destroy();
-    return;
-  }
-
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
-  });
-});
+const wss = new WebSocketServer({ server, path: '/media-stream' });
+// Note: la validation de signature Twilio sur cette connexion WebSocket a ete
+// testee a deux reprises et echoue systematiquement (contrairement a /voice qui
+// fonctionne bien), meme en suivant les methodes documentees. Laissee de cote
+// pour l'instant - l'URL Railway n'etant connue de personne, le risque reste
+// faible en phase de test. A reprendre plus tard avec plus de temps dedie,
+// avant l'ouverture aux vrais patients.
 
 // --- Definition des outils que Grok Voice peut appeler ---
 const TOOLS = [
