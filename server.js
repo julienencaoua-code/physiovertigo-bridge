@@ -170,9 +170,23 @@ function normalizePhoneNumber(raw) {
 }
 
 // --- Webhook Twilio : appele quand un patient compose le numero ---
-// twilio.webhook() valide la signature X-Twilio-Signature pour s'assurer que
-// la requete vient bien de Twilio et non d'un tiers qui aurait devine l'URL.
-app.post('/voice', twilio.webhook(), (req, res) => {
+// Validation manuelle (plutot que twilio.webhook()) pour voir clairement dans
+// les logs si la signature passe ou echoue, et pourquoi.
+app.post('/voice', (req, res) => {
+  const signature = req.headers['x-twilio-signature'];
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const url = process.env.PUBLIC_WS_VALIDATION_URL
+    ? process.env.PUBLIC_WS_VALIDATION_URL.replace('/media-stream', '/voice')
+    : `${proto}://${req.headers.host}${req.originalUrl}`;
+
+  const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, req.body);
+  console.log(`[VOICE WEBHOOK] Signature valide: ${isValid} | URL utilisee: ${url}`);
+
+  if (!isValid) {
+    console.error('[VOICE WEBHOOK] Signature invalide - requete rejetee.');
+    return res.status(403).send('Invalid signature');
+  }
+
   const callerNumber = normalizePhoneNumber(req.body.From || '');
   const callSid = req.body.CallSid || '';
 
