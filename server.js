@@ -218,31 +218,7 @@ app.post('/whatsapp-status', twilio.webhook(), (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
-
-// Valide la signature Twilio avant d'accepter la connexion WebSocket,
-// pour qu'un tiers connaissant l'URL ne puisse pas se connecter directement.
-server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/media-stream') {
-    socket.destroy();
-    return;
-  }
-
-  const signature = req.headers['x-twilio-signature'];
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const url = process.env.PUBLIC_WS_VALIDATION_URL || `${proto}://${req.headers.host}${req.url}`;
-  const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, {});
-
-  if (!isValid) {
-    console.error('Signature Twilio invalide sur la connexion WebSocket - connexion refusee.');
-    socket.destroy();
-    return;
-  }
-
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
-  });
-});
+const wss = new WebSocketServer({ server, path: '/media-stream' });
 
 // --- Definition des outils que Grok Voice peut appeler ---
 const TOOLS = [
