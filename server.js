@@ -218,7 +218,33 @@ app.post('/whatsapp-status', twilio.webhook(), (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/media-stream' });
+const wss = new WebSocketServer({ noServer: true });
+
+// Valide la signature Twilio avant d'accepter la connexion WebSocket,
+// pour qu'un tiers connaissant l'URL ne puisse pas se connecter directement.
+server.on('upgrade', (req, socket, head) => {
+  if (req.url !== '/media-stream') {
+    socket.destroy();
+    return;
+  }
+
+  const signature = req.headers['x-twilio-signature'];
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const url = process.env.PUBLIC_WS_VALIDATION_URL || `${proto}://${req.headers.host}${req.url}`;
+  const isValid = twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN, signature, url, {});
+
+  console.log(`[WS UPGRADE] Signature valide: ${isValid} | URL utilisee: ${url}`);
+
+  if (!isValid) {
+    console.error('[WS UPGRADE] Signature invalide - connexion refusee.');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
 
 // --- Definition des outils que Grok Voice peut appeler ---
 const TOOLS = [
@@ -359,6 +385,7 @@ wss.on('connection', (twilioWs) => {
         // le buffer audio Twilio pour que l'IA s'arrete net plutot que de continuer
         // par-dessus la voix du patient.
         if (event.type === 'input_audio_buffer.speech_started' && streamSid) {
+          console.log('[DIAGNOSTIC] speech_started recu - envoi du clear a Twilio');
           userIsSpeaking = true;
           twilioWs.send(JSON.stringify({
             event: 'clear',
@@ -367,7 +394,14 @@ wss.on('connection', (twilioWs) => {
         }
 
         if (event.type === 'input_audio_buffer.speech_stopped') {
+          console.log('[DIAGNOSTIC] speech_stopped recu');
           userIsSpeaking = false;
+        }
+
+        // Filet de diagnostic temporaire : voir tous les types d'evenements Grok
+        // recus, pour confirmer lesquels existent reellement pendant un appel.
+        if (!['response.output_audio.delta', 'response.function_call_arguments.done'].includes(event.type)) {
+          console.log('[DIAGNOSTIC] Evenement Grok recu:', event.type);
         }
 
         // Audio genere par Grok Voice -> on le renvoie a Twilio pour que le patient l'entende.
